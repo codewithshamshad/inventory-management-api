@@ -3,55 +3,12 @@ from fastapi import FastAPI,Query,HTTPException,status,Response, Depends
 from enum import StrEnum
 from database import engine,Base ,SessionLocal,get_db
 import models
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 
 app = FastAPI()
 Base.metadata.create_all(engine)
-items = [
-    {
-        "id": 1,
-        "name": "Laptop",
-        "category": "Electronics",
-        "quantity": 15,
-        "price": 3500
-    },
-    {
-        "id": 2,
-        "name": "Keyboard",
-        "category": "Accessories",
-        "quantity": 25,
-        "price": 150
-    },
-    {
-        "id": 3,
-        "name": "Mouse",
-        "category": "Accessories",
-        "quantity": 30,
-        "price": 80
-    },
-    {
-        "id": 4,
-        "name": "Safety Gloves",
-        "category": "Safety",
-        "quantity": 100,
-        "price": 25
-    },
-    {
-        "id": 5,
-        "name": "Hard Hat",
-        "category": "Safety",
-        "quantity": 50,
-        "price": 60
-    },
-    {
-        "id": 6,
-        "name": "Hp12 Mouse",
-        "category": "Mouse",
-        "quantity": 50,
-        "price": 60
-    }
-]
+
 class Category(StrEnum):
     Electronics = "Electronics"
     Accessories = "Accessories"
@@ -78,12 +35,23 @@ class ItemUpdate(BaseModel):
     category: Category
     quantity: int
     Price : float
+
 class ItemPatch(BaseModel):
     name:str | None = None
     category: Category | None = None
     quantity: int | None = None
     price: int | None = None
 
+
+class SortBy(StrEnum):
+    id = "id"
+    name = "name"
+    price = "price"
+    quantity = "quantity"
+
+class SortOrder(StrEnum):
+    asc = "asc"
+    desc = "desc"
 
 def pagination(skip: int = Query(default=0, ge=0), limit: int = Query(default=10, gt=0)):
     return {"skip": skip, "limit": limit}
@@ -97,23 +65,50 @@ def home():
 @app.get("/items", response_model=list[ItemView])
 def get_items(
     category: Category | None = None,
+    search: str | None = None,
+    sort_by: SortBy = SortBy.id,
+    order: SortOrder = SortOrder.asc,
     data=Depends(pagination),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     skip = data["skip"]
     limit = data["limit"]
 
-    query = db.query(models.Item)
+    stmt = select(models.Item)
 
+    # Filter by category
     if category:
-        query = query.filter(
+        stmt = stmt.where(
             models.Item.category == category
         )
 
-    items = query.offset(skip).limit(limit).all()
+    # Search by name
+    if search:
+        stmt = stmt.where(
+            models.Item.name.ilike(f"%{search}%")
+        )
 
-    return items
+    # Sorting
+    sort_column = getattr(
+        models.Item,
+        sort_by.value
+    )
 
+    if order == SortOrder.desc:
+        stmt = stmt.order_by(
+            sort_column.desc()
+        )
+    else:
+        stmt = stmt.order_by(
+            sort_column.asc()
+        )
+
+    # Pagination
+    stmt = stmt.offset(skip).limit(limit)
+
+    result = db.execute(stmt)
+
+    return result.scalars().all()
 
 @app.get("/items/{item_id}",response_model=ItemView)
 def get_item_by_id(item_id:  int,db: Session = Depends(get_db)):
@@ -149,30 +144,55 @@ def update_item(
 
     return item
 
-@app.patch("/items/{item_id}")
-def patch_tem(item_id:int,updated_item: ItemPatch):
-    for item in items:
-        if item["id"] == item_id:
-            updated_data=updated_item.model_dump(exclude_unset=True)
-            print(updated_data)
-            item.update(updated_data)
-            return item
+@app.patch("/items/{item_id}", response_model=ItemView)
+def patch_item(
+    item_id: int,
+    updated_item: ItemPatch,
+    db: Session = Depends(get_db)
+):
+    item = db.get(models.Item, item_id)
 
-    raise HTTPException(status_code=404, detail="Item not found")
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Item not found"
+        )
 
-@app.delete("/items/{item_id}")
-def delete_item(item_id:int):
-    item_to_delete = None
-    for item in items:
-        if item["id"] == item_id:
-            item_to_delete = item
-            break
-    if item_to_delete is not None:
-        items.remove(item_to_delete)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    updated_data = updated_item.model_dump(
+        exclude_unset=True
+    )
 
-    raise HTTPException(status_code=404, detail="Item not found")
+    for field, value in updated_data.items():
+        setattr(item, field, value)
 
+    db.commit()
+    db.refresh(item)
+
+    return item
+
+@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(
+    item_id: int,
+    db: Session = Depends(get_db)
+):
+    stmt = select(models.Item).where(
+        models.Item.id == item_id
+    )
+
+    item = db.execute(stmt).scalar_one_or_none()
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Item not found"
+        )
+
+    db.delete(item)
+    db.commit()
+
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT
+    )
 @app.get("/db")
 def check_db():
     with engine.connect() as connection:
