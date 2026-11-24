@@ -1,6 +1,18 @@
-from sqlalchemy import String, Integer, Float
-from sqlalchemy.orm import Mapped, mapped_column
-from database import Base
+from sqlalchemy import String, Integer, Float, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column,relationship
+from app.database import Base
+from typing import List
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+
+    items: Mapped[List["Item"]] = relationship(
+        back_populates="category"
+    )
 
 
 class Item(Base):
@@ -8,6 +20,13 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    category: Mapped[str] = mapped_column(String(50))
     quantity: Mapped[int] = mapped_column(Integer)
     price: Mapped[float] = mapped_column(Float)
+
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id")
+    )
+
+    category: Mapped["Category"] = relationship(
+        back_populates="items"
+    )
