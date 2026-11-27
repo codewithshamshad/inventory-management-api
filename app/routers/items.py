@@ -177,7 +177,10 @@ def create_item(item: ItemCreate,db:Session=Depends(get_db)):
         name=item.name,
         category_id=item.category_id,
         quantity=item.quantity,
-        price=item.price
+        price=item.price,
+        sku=item.sku,
+        description=item.description,
+        group_id=item.group_id
     )
 
     db.add(db_item)

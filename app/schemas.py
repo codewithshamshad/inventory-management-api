@@ -20,11 +20,35 @@ class Category(StrEnum):
     Mobile="Mobile"
     PPE="PPE"
 
+class SKU(StrEnum):
+    pcs="PCS"
+    ea="EA"
+    dozen="DOZEN"
+    kg="KG"
+
+# class Group(StrEnum):
+#     group_a="Group A"
+#     group_b="Group B"
+#     group_c="Group C"
+
+class GroupCreate(BaseModel):
+    name: str
+    # model_config = ConfigDict(from_attributes=True)
+
+class GroupView(BaseModel):
+    id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
 class ItemCreate(BaseModel):
     name: str
-    category_id: int
     quantity: int
     price: float
+    sku:SKU
+    description: str
+    category_id: int
+    group_id:int
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ItemView(BaseModel):
